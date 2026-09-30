@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RAID · Simulador interactiu</title>
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#e7eef4; --grid:rgba(13,42,69,.07); --card:#f7fafc; --ink:#0d2a45; --muted:#4d6479;
+  --line:#a9bccd; --disk:#dde7ef; --hv:#ffd400; --on-hv:#111820;
+  --ok:#1b7f4b; --bad:#c62828; --warn:#a85f00; --rebuild:#ffb300; --info:#1d6fd1;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0b2a4a; --grid:rgba(255,255,255,.07); --card:#0f3559; --ink:#eaf3fb; --muted:#a7c0d6;
+    --line:#3b678f; --disk:#0c2f52; --ok:#5fd68a; --bad:#ff7a7a; --warn:#ffc53d; --rebuild:#ffc53d; --info:#7db8ff;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0b2a4a; --grid:rgba(255,255,255,.07); --card:#0f3559; --ink:#eaf3fb; --muted:#a7c0d6;
+  --line:#3b678f; --disk:#0c2f52; --ok:#5fd68a; --bad:#ff7a7a; --warn:#ffc53d; --rebuild:#ffc53d; --info:#7db8ff;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{
+  margin:0;background-color:var(--bg);color:var(--ink);
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:24px 24px;
+  font-family:"Bahnschrift","DIN Alternate","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  font-size:16px;line-height:1.5;
+}
+.wrap{max-width:1120px;margin:0 auto;padding:18px 16px 40px}
+h1,h2,h3,p{margin:0}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--info);outline-offset:2px}
+
+/* Capçalera tipus cartutx de plànol */
+.head{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:18px}
+.head h1{font-size:clamp(34px,7vw,60px);line-height:1;font-weight:800;letter-spacing:-.02em}
+.head .lead{max-width:60ch;color:var(--muted);margin-top:8px}
+.cartouche{display:grid;grid-template-columns:1fr 1fr;border:2px solid var(--ink);background:var(--card);font-size:13px}
+.cartouche div{padding:6px 10px;border-right:1px solid var(--ink);border-bottom:1px solid var(--ink)}
+.cartouche div:nth-child(2n){border-right:0}
+.cartouche div:nth-last-child(-n+2){border-bottom:0}
+.cartouche small{display:block;color:var(--muted);font-size:11px}
+.cartouche b{font-weight:700}
+@media(min-width:760px){.head{grid-template-columns:1fr 340px;align-items:end}}
+
+/* Pestanyes */
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tab{appearance:none;cursor:pointer;background:var(--card);border:2px solid var(--line);border-radius:10px;padding:8px 14px;text-align:left;min-width:92px;flex:1 1 92px}
+.tab b{display:block;font-size:18px;font-weight:800;line-height:1.2}
+.tab span{font-size:12.5px;color:var(--muted)}
+.tab:hover{border-color:var(--ink)}
+.tab[aria-selected="true"]{background:var(--ink);border-color:var(--ink);color:var(--card)}
+.tab[aria-selected="true"] span{color:var(--card);opacity:.8}
+:root:not([data-theme="light"]) .tab[aria-selected="true"]{}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tab[aria-selected="true"]{background:var(--hv);border-color:var(--hv);color:var(--on-hv)}:root:not([data-theme="light"]) .tab[aria-selected="true"] span{color:var(--on-hv)}}
+:root[data-theme="dark"] .tab[aria-selected="true"]{background:var(--hv);border-color:var(--hv);color:var(--on-hv)}
+:root[data-theme="dark"] .tab[aria-selected="true"] span{color:var(--on-hv)}
+
+/* Graella principal */
+.grid{display:grid;gap:16px;grid-template-columns:1fr;grid-template-areas:"info" "sim" "cap" "tbl"}
+@media(min-width:960px){
+  .grid{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);grid-template-areas:"sim info" "sim cap" "tbl tbl"}
+}
+.card{background:var(--card);border:2px solid var(--ink);border-radius:6px;padding:16px;min-width:0}
+.card h2{font-size:21px;font-weight:800;margin-bottom:8px}
+.card h2 span{font-weight:500;color:var(--muted)}
+#info{grid-area:info}#simcard{grid-area:sim}#capcard{grid-area:cap}#tblcard{grid-area:tbl}
+
+/* Info */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}
+.stat{border:1.5px solid var(--line);border-radius:6px;padding:8px 10px;background:var(--disk);min-width:0}
+.stat small{display:block;font-size:12px;color:var(--muted);line-height:1.25}
+.stat b{display:block;font-size:24px;font-weight:800;line-height:1.2;margin-top:2px}
+.stat em{display:block;font-style:normal;font-size:12px;color:var(--muted);line-height:1.3;margin-top:2px;overflow-wrap:anywhere}
+.use{font-size:14.5px;border-left:5px solid var(--hv);padding-left:10px}
+
+/* Simulador */
+.simhead{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+.speed{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.speed input{width:96px}
+.queue-label{font-size:13px;color:var(--muted);margin:6px 0 4px}
+.queue{display:flex;flex-wrap:wrap;gap:4px;min-height:24px;margin-bottom:12px}
+.chip{font-weight:700;font-size:11px;padding:2px 6px;border-radius:4px;background:var(--c);color:#fff;transition:opacity .3s}
+.chip.done{opacity:.22}
+.arraywrap{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px}
+.rowlabels{display:flex;flex-direction:column;gap:5px;padding:6px 0;flex:0 0 auto}
+.rowlabels .hd{height:38px}
+.rl{height:34px;display:grid;align-items:center;font-size:12px;color:var(--muted);padding-right:2px}
+.array{display:flex;gap:8px;flex:1 1 auto;min-width:0}
+.disk{appearance:none;cursor:pointer;background:var(--disk);border:2px solid var(--line);border-radius:10px;padding:6px;flex:1 1 0;min-width:48px;max-width:120px;display:flex;flex-direction:column;gap:5px;text-align:left;transition:border-color .2s,background .2s}
+.disk:hover{border-color:var(--ink)}
+.disk.failed{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 10%,var(--disk))}
+.dh{display:block;height:38px;line-height:1.2}
+.dh b{display:flex;align-items:center;gap:5px;font-size:12.5px;font-weight:700;white-space:nowrap}
+.dh small{display:block;font-size:11.5px;color:var(--muted);padding-left:13px}
+.led{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:0 0 auto;box-shadow:0 0 0 2px color-mix(in srgb,var(--ok) 30%,transparent)}
+.disk.failed .led{background:var(--bad);box-shadow:0 0 0 2px color-mix(in srgb,var(--bad) 30%,transparent)}
+.disk.fresh .led{background:var(--rebuild);box-shadow:0 0 0 2px color-mix(in srgb,var(--rebuild) 35%,transparent)}
+.disk.failed .dh small{color:var(--bad);font-weight:700}
+.dcells{display:flex;flex-direction:column;gap:5px}
+.cell{height:34px;border-radius:5px;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff;background:var(--c);font-variant-numeric:tabular-nums;white-space:nowrap}
+.cell.empty{background:transparent;border:1.5px dashed var(--line);color:transparent}
+.cell.M{background:color-mix(in srgb,var(--c) 45%,transparent);border:1.5px dashed var(--c);color:var(--ink)}
+.cell.P{background:repeating-linear-gradient(135deg,#ffd400 0 7px,#e6bb00 7px 14px);color:#111820}
+.cell.Q{background:#111820;color:#ffd400;border:2px solid #ffd400}
+.cell.lost{background:repeating-linear-gradient(45deg,transparent 0 5px,color-mix(in srgb,var(--bad) 28%,transparent) 5px 10px);border:1.5px solid var(--bad);color:var(--bad)}
+.cell.rebuild{background:var(--rebuild);color:#241a00;animation:pulse .7s ease-in-out infinite alternate}
+.cell.del{background:transparent;border:1.5px dashed var(--muted);color:var(--muted);text-decoration:line-through}
+.cell.pop{animation:pop .42s cubic-bezier(.2,.9,.3,1.3)}
+@keyframes pop{0%{transform:scale(.2);opacity:0}60%{transform:scale(1.14);opacity:1}100%{transform:scale(1)}}
+@keyframes pulse{from{transform:scale(.94)}to{transform:scale(1.04)}}
+
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--muted);margin:6px 0 10px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:20px;height:14px;border-radius:3px}
+.caption{min-height:3.2em;font-size:14.5px;background:var(--disk);border-radius:6px;padding:9px 12px;margin-bottom:10px}
+.status{border:2px solid var(--line);border-radius:6px;padding:9px 12px;font-size:14.5px;margin-bottom:12px}
+.status.ok{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,var(--card))}
+.status.bad{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,var(--card))}
+.status.warn{border-color:var(--warn);background:color-mix(in srgb,var(--rebuild) 16%,var(--card))}
+.status.info{border-color:var(--info)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.btn{appearance:none;cursor:pointer;border:2px solid var(--ink);background:var(--card);border-radius:8px;padding:8px 14px;font-weight:600;font-size:14.5px}
+.btn:hover:not(:disabled){background:var(--disk)}
+.btn.primary{background:var(--hv);color:var(--on-hv);border-color:var(--hv)}
+.btn.primary:hover:not(:disabled){filter:brightness(.94);background:var(--hv)}
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.hint{font-size:13px;color:var(--muted);margin-top:8px}
+
+/* Capacitat */
+.ctrl{display:grid;grid-template-columns:1fr;gap:10px;margin:8px 0 14px}
+.ctrl label{font-size:14px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ctrl .val{color:var(--ink);font-weight:800;font-size:17px;min-width:56px;text-align:right}
+.stepper{display:inline-flex;align-items:center;gap:8px}
+.stepper button{width:34px;height:34px;border-radius:8px;border:2px solid var(--ink);background:var(--card);font-size:18px;font-weight:700;cursor:pointer}
+.stepper button:disabled{opacity:.35;cursor:not-allowed}
+.ctrl input[type=range]{flex:1;min-width:0}
+.ctrl input[type=number]{width:76px;font:inherit;font-weight:700;padding:5px 8px;border:2px solid var(--ink);border-radius:8px;background:var(--card);color:var(--ink)}
+.bar{display:flex;height:40px;border-radius:6px;overflow:hidden;border:2px solid var(--ink)}
+.seg{display:grid;align-items:center;padding:0 8px;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;transition:width .5s ease}
+.seg.use{background:var(--ok);color:#fff}
+:root:not([data-theme="light"]) .seg.use{}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .seg.use{color:#06210f}}
+:root[data-theme="dark"] .seg.use{color:#06210f}
+.seg.red{background:repeating-linear-gradient(135deg,#ffd400 0 8px,#e6bb00 8px 16px);color:#111820}
+.barinfo{font-size:14px;margin:8px 0 12px;color:var(--muted)}
+.barinfo b{color:var(--ink)}
+.need{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.verdict{display:inline-block;font-weight:700;padding:5px 10px;border-radius:6px;border:2px solid var(--line);font-size:14.5px}
+.verdict.ok{border-color:var(--ok);color:var(--ok)}
+.verdict.bad{border-color:var(--bad);color:var(--bad)}
+
+/* Taula */
+.tblwrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:14.5px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1.5px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:600;border-bottom:2px solid var(--ink)}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--disk)}
+tbody tr.cur{background:color-mix(in srgb,var(--hv) 26%,var(--card))}
+td.nm button{appearance:none;background:none;border:0;padding:0;font-weight:800;font-size:16px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+td small{display:block;color:var(--muted);font-size:12.5px}
+.na{color:var(--muted)}
+.warnnote{margin-top:16px;border:2px solid var(--ink);border-left:10px solid var(--hv);background:var(--card);padding:12px 14px;border-radius:6px;font-size:15px}
+@media (prefers-reduced-motion: reduce){
+  .cell.pop,.cell.rebuild{animation:none}
+  .seg,.chip{transition:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="head">
+  <div>
+    <h1>RAID</h1>
+    <p class="lead">El NAS de l'oficina guarda plànols, pressupostos i fotos de l'obra. Tria un tipus de RAID, mira com s'hi reparteixen els fitxers i trenca discs per veure què passa.</p>
+  </div>
+  <div class="cartouche" aria-label="Capçalera del plànol">
+    <div><small>Obra</small><b>Edifici plurifamiliar, C/ Major 12</b></div>
+    <div><small>Plànol</small><b>Sala de màquines</b></div>
+    <div><small>Assignatura</small><b>Informàtica, GATE</b></div>
+    <div><small>Pràctica</small><b>LAB 3, Bloc 4</b></div>
+  </div>
+</header>
+
+<div class="tabs" id="tabs" role="tablist" aria-label="Tipus de RAID"></div>
+
+<main class="grid">
+  <section class="card" id="info" aria-live="polite"></section>
+
+  <section class="card" id="simcard">
+    <div class="simhead">
+      <h2>Simulador de discs</h2>
+      <label class="speed">Velocitat <input type="range" id="speed" min="0.5" max="3" step="0.25" value="1"></label>
+    </div>
+    <div class="queue-label">Blocs de fitxers que arriben al NAS:</div>
+    <div class="queue" id="queue"></div>
+    <div class="arraywrap"><div class="rowlabels" id="rowlabels"></div><div class="array" id="array"></div></div>
+    <div class="legend" id="legend"></div>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="status info" id="status" role="status"></div>
+    <div class="actions">
+      <button class="btn primary" id="btnWrite">Escriu els fitxers</button>
+      <button class="btn" id="btnRebuild">Substitueix el disc i reconstrueix</button>
+      <button class="btn" id="btnDelete">Esborra B1 per error</button>
+    </div>
+    <p class="hint">Clica un disc per trencar-lo (o clica'l de nou per reconnectar-lo). Prova de trencar-ne dos.</p>
+  </section>
+
+  <section class="card" id="capcard">
+    <h2>Calculadora de capacitat</h2>
+    <div class="ctrl">
+      <label>Nombre de discs (n)
+        <span class="stepper"><button id="nMinus" aria-label="Menys discs">−</button><span class="val" id="nVal"></span><button id="nPlus" aria-label="Més discs">+</button></span>
+      </label>
+      <label>Capacitat per disc (C)
+        <input type="range" id="cRange" min="1" max="16" step="1" value="4"><span class="val" id="cVal"></span>
+      </label>
+      <label>Dades que cal guardar
+        <span><input type="number" id="need" min="1" max="200" step="1" value="6" aria-label="Terabytes necessaris"> TB</span>
+      </label>
+    </div>
+    <div class="bar" id="bar"></div>
+    <p class="barinfo" id="barinfo"></p>
+    <div class="need"><span class="verdict" id="verdict"></span></div>
+    <div class="actions" style="margin-top:12px"><button class="btn" id="btnPreset">Repte LAB 3: 4 discs de 4 TB i 6 TB</button></div>
+  </section>
+
+  <section class="card" id="tblcard">
+    <h2>Comparativa <span>amb els valors de la calculadora</span></h2>
+    <div class="tblwrap"><table>
+      <thead><tr><th>Tipus</th><th>Com funciona</th><th>Discs mínims</th><th>Fallades tolerades</th><th>Capacitat útil</th><th id="thNeed">Serveix?</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table></div>
+  </section>
+</main>
+
+<div class="warnnote"><b>El RAID no és una còpia de seguretat.</b> Et salva d'una avaria de disc, però no d'un fitxer esborrat per error, d'un ransomware ni d'un incendi a l'oficina. Per això cal la regla 3-2-1: 3 còpies, en 2 suports, 1 fora de l'oficina.</div>
+</div>
+
+<script>
+(function(){
+"use strict";
+var ROWS=4, MAXN=8;
+var PAL=['#1d6fd1','#1f9d6b','#e4572e','#8e44ad','#0aa3b5','#d6336c','#5b6ee1'];
+var $=function(s){return document.querySelector(s)};
+var mod=function(a,b){return ((a%b)+b)%b};
+
+var TYPES={
+ r0:{id:'r0',name:'RAID 0',sub:'Striping',min:2,step:1,
+  short:'Reparteix les dades entre discs (striping), sense cap protecció',
+  how:"Les dades es reparteixen a trossos entre tots els discs i s'escriuen en paral·lel. Guanyes velocitat i capacitat, però no hi ha redundància: si falla un sol disc, es perd tot el volum.",
+  use:"Zona temporal de renderitzats o memòria cau de models BIM: importa la velocitat i les dades es poden regenerar.",
+  cap:function(n,C){return n*C}, formula:'n · C', sub_f:function(n,C){return n+' · '+C},
+  tol:function(n){return '0'}, tolNote:function(n){return 'si un disc falla, es perd tot'},
+  tolTable:function(n){return '0 (si un falla, es perd tot)'}},
+ r1:{id:'r1',name:'RAID 1',sub:'Mirall',min:2,step:1,
+  short:'Còpia idèntica de cada bloc en dos o més discs (mirall)',
+  how:"Cada bloc s'escriu idèntic en tots els discs del mirall. Si un disc falla, un altre té exactament la mateixa informació. La capacitat és la d'un sol disc, sigui quants discs hi hagi.",
+  use:"Ordinador de l'oficina tècnica amb dos discs: el pressupost continua disponible si un disc s'espatlla.",
+  cap:function(n,C){return C}, formula:'C', sub_f:function(n,C){return ''+C},
+  tol:function(n){return ''+(n-1)}, tolNote:function(n){return 'mentre quedi 1 disc en marxa'},
+  tolTable:function(n){return (n-1)+' (mentre en quedi un)'}},
+ r5:{id:'r5',name:'RAID 5',sub:'Paritat distribuïda',min:3,step:1,
+  short:'Dades repartides més un bloc de paritat que rota entre discs',
+  how:"Les dades es reparteixen entre els discs i a cada fila es calcula un bloc de paritat (P = XOR dels blocs de dades). La paritat canvia de disc a cada fila. Si un disc falla, el seu contingut es recalcula amb els que queden.",
+  use:"NAS d'una oficina d'obra: bon equilibri entre capacitat útil i seguretat.",
+  cap:function(n,C){return (n-1)*C}, formula:'(n − 1) · C', sub_f:function(n,C){return '('+n+' − 1) · '+C},
+  tol:function(n){return '1'}, tolNote:function(n){return 'un disc qualsevol'},
+  tolTable:function(n){return '1'}},
+ r6:{id:'r6',name:'RAID 6',sub:'Doble paritat',min:4,step:1,
+  short:'Com el RAID 5, amb dues paritats independents (P i Q)',
+  how:"Com el RAID 5, però amb dues paritats independents (P i Q) a cada fila. Aguanta la fallada de dos discs alhora, cosa útil perquè mentre es reconstrueix un disc gran en pot fallar un altre.",
+  use:"Arxiu històric d'obres amb molts discs grans: la reconstrucció triga hores i pot caure un segon disc.",
+  cap:function(n,C){return (n-2)*C}, formula:'(n − 2) · C', sub_f:function(n,C){return '('+n+' − 2) · '+C},
+  tol:function(n){return '2'}, tolNote:function(n){return 'dos discs qualssevol'},
+  tolTable:function(n){return '2'}},
+ r10:{id:'r10',name:'RAID 10',sub:'Mirall + striping',min:4,step:2,
+  short:'Parelles de discs en mirall (1) i dades repartides entre parelles (0)',
+  how:"Combina mirall i striping: els discs formen parelles en mirall i les dades es reparteixen entre les parelles. És ràpid i es reconstrueix fàcilment, però perds la meitat de la capacitat.",
+  use:"Servidor de models BIM amb molts usuaris treballant alhora: velocitat i tolerància a fallades.",
+  cap:function(n,C){return (n/2)*C}, formula:'(n / 2) · C', sub_f:function(n,C){return '('+n+' / 2) · '+C},
+  tol:function(n){return '1 garantida'}, tolNote:function(n){return 'fins a '+(n/2)+' si són de parelles diferents'},
+  tolTable:function(n){return '1 garantida (fins a '+(n/2)+' si són de parelles diferents)'}}
+};
+var ORDER=['r0','r1','r5','r6','r10'];
+
+var S={type:'r5',n:4,C:4,need:6,speed:1,written:false,busy:false,token:0,
+  filled:new Set(),fresh:new Set(),failed:new Set(),deleted:new Set(),rebuild:new Set(),newDisks:new Set(),done:new Set()};
+
+var wait=function(ms,tok){return new Promise(function(res){setTimeout(function(){res(tok===S.token)},ms/S.speed)})};
+var valid=function(t,n){return n>=t.min && (t.id!=='r10'||n%2===0)};
+
+function layout(type,n){
+  var rows=[],idx=0;
+  for(var r=0;r<ROWS;r++){
+    var row=new Array(n),c;
+    if(type==='r0'){ for(c=0;c<n;c++) row[c]={k:'D',i:idx++}; }
+    else if(type==='r1'){ var i1=idx++; for(c=0;c<n;c++) row[c]=(c===0)?{k:'D',i:i1}:{k:'M',i:i1}; }
+    else if(type==='r5'){ var p=mod(n-1-r,n); for(c=0;c<n;c++) row[c]=(c===p)?{k:'P',r:r}:{k:'D',i:idx++}; }
+    else if(type==='r6'){ var p6=mod(n-1-r,n), q6=mod(n-2-r,n); for(c=0;c<n;c++){ row[c]=(c===p6)?{k:'P',r:r}:(c===q6)?{k:'Q',r:r}:{k:'D',i:idx++}; } }
+    else if(type==='r10'){ for(var k=0;k<n/2;k++){ var i10=idx++; row[2*k]={k:'D',i:i10}; row[2*k+1]={k:'M',i:i10}; } }
+    rows.push(row);
+  }
+  return {rows:rows,total:idx};
+}
+
+function survives(type,n,F){
+  var k=F.size; if(k===0) return true;
+  switch(type){
+    case 'r0': return false;
+    case 'r1': return k<n;
+    case 'r5': return k<=1;
+    case 'r6': return k<=2;
+    case 'r10': for(var p=0;p<n/2;p++){ if(F.has(2*p)&&F.has(2*p+1)) return false; } return true;
+  }
+  return false;
+}
+
+/* ---------- Textos dinàmics ---------- */
+function rowCaption(type,n,r,row){
+  var data=row.filter(function(x){return x.k==='D'}).map(function(x){return 'B'+(x.i+1)});
+  var f='<b>Fila '+(r+1)+'.</b> ';
+  var p=row.findIndex(function(x){return x.k==='P'}), q=row.findIndex(function(x){return x.k==='Q'});
+  switch(type){
+    case 'r0': return f+'Repartim '+data.join(', ')+' entre els '+n+' discs i s\'escriuen alhora (striping): més velocitat, cap protecció.';
+    case 'r1': return f+'El bloc '+data[0]+' es copia idèntic als '+n+' discs (mirall).';
+    case 'r5': return f+'Escrivim '+data.join(', ')+' i calculem la paritat <b>P'+(r+1)+' = '+data.join(' ⊕ ')+'</b> al disc '+(p+1)+'.';
+    case 'r6': return f+'Escrivim '+data.join(', ')+' i calculem dues paritats independents, <b>P'+(r+1)+'</b> (disc '+(p+1)+') i <b>Q'+(r+1)+'</b> (disc '+(q+1)+').';
+    case 'r10': return f+data.join(', ')+' es reparteixen entre '+(n/2)+' parelles i cada bloc es copia al disc mirall de la seva parella.';
+  }
+  return '';
+}
+function failCaption(c){
+  var t=S.type, ok=survives(t,S.n,S.failed), h='<b>Disc '+(c+1)+' trencat.</b> ';
+  if(ok){
+    if(t==='r1') return h+'Els discs que queden tenen una còpia idèntica de tot.';
+    if(t==='r10') return h+'El seu mirall té exactament els mateixos blocs.';
+    if(t==='r5') return h+'Cada bloc perdut es recalcula amb els altres blocs de la fila i la paritat: B = P ⊕ (la resta).';
+    if(t==='r6') return h+'Amb P i Q es poden recuperar fins a dos discs.';
+    return h;
+  }
+  if(t==='r0') return h+'Sense redundància, cada fila ha perdut un bloc: el volum sencer és inservible.';
+  if(t==='r10') return h+'Una parella sencera ha caigut: cap dels dos discs té els seus blocs.';
+  if(t==='r5') return h+'El RAID 5 només suporta 1 disc trencat. Amb dos, falten massa blocs per recalcular.';
+  if(t==='r6') return h+'El RAID 6 suporta 2 discs trencats. Amb tres, no es pot reconstruir.';
+  return h+'Ja no queda cap disc amb dades.';
+}
+function rebuildCaption(){
+  var t=S.type;
+  if(t==='r1'||t==='r10') return 'Disc nou instal·lat. <b>Reconstrucció:</b> copiem cada bloc des del disc mirall.';
+  if(t==='r5') return 'Disc nou instal·lat. <b>Reconstrucció:</b> recalculem cada bloc amb XOR de la resta de la fila (dades i paritat).';
+  return 'Disc nou instal·lat. <b>Reconstrucció:</b> recalculem cada bloc a partir dels discs supervivents i les paritats P i Q.';
+}
+
+function setCaption(h){$('#caption').innerHTML=h}
+
+/* ---------- Render ---------- */
+function cellHTML(r,c,cell){
+  var key=r*100+c, cls='cell', label='', style='';
+  var filled=S.filled.has(key), failed=S.failed.has(c);
+  if(S.rebuild.has(key)){ cls+=' rebuild'; label='↻'; }
+  else if(!filled){ cls+=' empty'; label='·'; }
+  else if(failed){ cls+=' lost'; label='✕'; }
+  else if((cell.k==='D'||cell.k==='M') && S.deleted.has(cell.i)){
+    cls+=' del'; label='B'+(cell.i+1)+(cell.k==='M'?'′':'');
+  } else if(cell.k==='D'){ cls+=' D'; label='B'+(cell.i+1); style='--c:'+PAL[cell.i%PAL.length]; }
+  else if(cell.k==='M'){ cls+=' M'; label='B'+(cell.i+1)+'′'; style='--c:'+PAL[cell.i%PAL.length]; }
+  else if(cell.k==='P'){ cls+=' P'; label='P'+(cell.r+1); }
+  else if(cell.k==='Q'){ cls+=' Q'; label='Q'+(cell.r+1); }
+  if(S.fresh.has(key)) cls+=' pop';
+  return '<span class="'+cls+'"'+(style?' style="'+style+'"':'')+'>'+label+'</span>';
+}
+function renderSim(){
+  var L=layout(S.type,S.n), i, r, c;
+  var q='';
+  for(i=0;i<L.total;i++) q+='<span class="chip'+(S.done.has(i)?' done':'')+'" style="--c:'+PAL[i%PAL.length]+'">B'+(i+1)+'</span>';
+  $('#queue').innerHTML=q;
+  var rl='<span class="hd"></span>';
+  for(r=0;r<ROWS;r++) rl+='<span class="rl">Fila '+(r+1)+'</span>';
+  $('#rowlabels').innerHTML=rl;
+  var h='';
+  for(c=0;c<S.n;c++){
+    var failed=S.failed.has(c), isNew=S.newDisks.has(c);
+    var sub=failed?'trencat':(isNew?'disc nou':S.C+' TB');
+    h+='<button type="button" class="disk'+(failed?' failed':'')+(isNew?' fresh':'')+'" data-c="'+c+'" aria-label="Disc '+(c+1)+', '+(failed?'trencat. Clica per reconnectar':'en funcionament. Clica per trencar')+'">'
+      +'<span class="dh"><b><i class="led"></i>Disc '+(c+1)+'</b><small>'+sub+'</small></span><span class="dcells">';
+    for(r=0;r<ROWS;r++) h+=cellHTML(r,c,L.rows[r][c]);
+    h+='</span></button>';
+  }
+  $('#array').innerHTML=h;
+  S.fresh.clear();
+}
+function renderLegend(){
+  var t=S.type, h='<span><i style="background:#1d6fd1"></i>Bloc de dades (B1, B2…)</span>';
+  if(t==='r1'||t==='r10') h+='<span><i style="background:color-mix(in srgb,#1d6fd1 45%,transparent);border:1.5px dashed #1d6fd1"></i>Còpia mirall (B1′)</span>';
+  if(t==='r5'||t==='r6') h+='<span><i style="background:repeating-linear-gradient(135deg,#ffd400 0 7px,#e6bb00 7px 14px)"></i>Paritat P</span>';
+  if(t==='r6') h+='<span><i style="background:#111820;border:2px solid #ffd400"></i>Segona paritat Q</span>';
+  h+='<span><i style="background:repeating-linear-gradient(45deg,transparent 0 5px,rgba(198,40,40,.35) 5px 10px);border:1.5px solid #c62828"></i>Bloc perdut</span>';
+  $('#legend').innerHTML=h;
+}
+function renderStatus(){
+  var el=$('#status'), cls='info', html='';
+  if(S.busy){ html='Treballant…'; }
+  else if(!S.written){ html='Cap dada escrita encara. Prem «Escriu els fitxers».'; }
+  else if(S.failed.size){
+    var list=Array.from(S.failed).map(function(c){return c+1}).sort(function(a,b){return a-b}).join(', ');
+    var n=S.failed.size, txt=n===1?'1 disc trencat (disc '+list+')':n+' discs trencats (discs '+list+')';
+    if(survives(S.type,S.n,S.failed)){ cls='ok'; html='<b>Dades segures.</b> '+txt+'. El RAID funciona en mode degradat: substitueix el disc i reconstrueix.'; }
+    else { cls='bad'; html='<b>Dades perdudes.</b> '+txt+'. Aquest RAID no ho pot suportar. Només et salva una còpia de seguretat (regla 3-2-1).'; }
+  }
+  else if(S.deleted.size){ cls='warn'; html='<b>Error humà replicat.</b> B1 ha desaparegut de tots els discs alhora. Cap RAID ho evita: cal una còpia de seguretat o l\'historial de versions.'; }
+  else { cls='ok'; html='Tots els discs funcionen correctament.'; }
+  el.className='status '+cls; el.innerHTML=html;
+}
+function renderTabs(){
+  $('#tabs').innerHTML=ORDER.map(function(id){var t=TYPES[id];
+    return '<button type="button" role="tab" class="tab" data-t="'+id+'" aria-selected="'+(id===S.type)+'"><b>'+t.name+'</b><span>'+t.sub+'</span></button>'}).join('');
+}
+function renderInfo(){
+  var t=TYPES[S.type];
+  $('#info').innerHTML='<h2>'+t.name+' <span>'+t.sub+'</span></h2><p>'+t.how+'</p>'
+   +'<div class="stats">'
+   +'<div class="stat"><small>Discs mínims</small><b>'+t.min+'</b><em>'+(t.id==='r10'?'sempre en nombre parell':'&nbsp;')+'</em></div>'
+   +'<div class="stat"><small>Fallades tolerades</small><b>'+t.tol(S.n)+'</b><em>'+t.tolNote(S.n)+'</em></div>'
+   +'<div class="stat"><small>Capacitat útil</small><b>'+t.cap(S.n,S.C)+' TB</b><em>'+t.formula+' = '+t.sub_f(S.n,S.C)+'</em></div>'
+   +'</div><p class="use"><b>A l\'obra:</b> '+t.use+'</p>';
+}
+function renderCap(){
+  var t=TYPES[S.type], raw=S.n*S.C, use=t.cap(S.n,S.C), red=raw-use;
+  var pu=use/raw*100, pr=red/raw*100;
+  var h='<div class="seg use" style="width:'+pu+'%">'+(pu>16?use+' TB útils':'')+'</div>';
+  if(red>0) h+='<div class="seg red" style="width:'+pr+'%">'+(pr>16?red+' TB':'')+'</div>';
+  $('#bar').innerHTML=h;
+  var eff=Math.round(pu);
+  $('#barinfo').innerHTML='Total brut: <b>'+S.n+' × '+S.C+' = '+raw+' TB</b>. Útils: <b>'+use+' TB</b>. '+(red>0?'Redundància: <b>'+red+' TB</b> ('+(100-eff)+'%).':'Cap TB per a redundància.')+' Aprofitament: <b>'+eff+'%</b>.';
+  var v=$('#verdict');
+  if(use>=S.need){ v.className='verdict ok'; v.textContent='Hi caben els '+S.need+' TB'+(S.type==='r0'?', però sense protecció':''); }
+  else { v.className='verdict bad'; v.textContent='No hi caben: falten '+(S.need-use)+' TB'; }
+  $('#nVal').textContent=S.n; $('#cVal').textContent=S.C+' TB';
+  var step=t.step;
+  $('#nMinus').disabled=(S.n-step<t.min);
+  $('#nPlus').disabled=(S.n+step>MAXN);
+  $('#thNeed').textContent='Hi caben '+S.need+' TB?';
+}
+function renderTable(){
+  $('#tbody').innerHTML=ORDER.map(function(id){
+    var t=TYPES[id], ok=valid(t,S.n), cur=id===S.type?' class="cur"':'';
+    var first='<td class="nm"><button type="button" data-t="'+id+'">'+t.name+'</button><small>'+t.sub+'</small></td><td>'+t.short+'</td><td>'+t.min+(id==='r10'?' (parell)':'')+'</td>';
+    if(!ok) return '<tr data-t="'+id+'"'+cur+'>'+first+'<td colspan="3" class="na">No és possible amb '+S.n+' discs (mínim '+t.min+(id==='r10'?', en nombre parell':'')+').</td></tr>';
+    var use=t.cap(S.n,S.C), fits=use>=S.need;
+    return '<tr data-t="'+id+'"'+cur+'>'+first+'<td>'+t.tolTable(S.n)+'</td><td><b>'+use+' TB</b><small>'+t.formula+' = '+t.sub_f(S.n,S.C)+'</small></td><td>'+(fits?'Sí'+(id==='r0'?' (sense protecció)':''):'No')+'</td></tr>';
+  }).join('');
+}
+function updateButtons(){
+  $('#btnWrite').disabled=false;
+  $('#btnRebuild').disabled=S.busy||S.failed.size===0;
+  $('#btnDelete').disabled=S.busy||!S.written||S.deleted.size>0||S.failed.size>0;
+}
+function refresh(){renderSim();renderStatus();updateButtons()}
+function renderAll(){renderTabs();renderInfo();renderLegend();renderCap();renderTable();refresh()}
+
+/* ---------- Accions ---------- */
+function clearState(){
+  S.written=false;S.busy=false;S.filled.clear();S.fresh.clear();S.failed.clear();S.deleted.clear();S.rebuild.clear();S.newDisks.clear();S.done.clear();
+}
+async function startWrite(){
+  var tok=++S.token;
+  clearState(); S.busy=true;
+  setCaption('Escrivint dades al NAS…'); refresh();
+  var L=layout(S.type,S.n);
+  var wgt={D:0,M:1,P:2,Q:3};
+  for(var r=0;r<ROWS;r++){
+    var row=L.rows[r];
+    setCaption(rowCaption(S.type,S.n,r,row));
+    var order=row.map(function(_,c){return c}).sort(function(a,b){return wgt[row[a].k]-wgt[row[b].k]||a-b});
+    for(var j=0;j<order.length;j++){
+      var c=order[j], cell=row[c], key=r*100+c;
+      S.filled.add(key); S.fresh.add(key);
+      if(cell.k==='D') S.done.add(cell.i);
+      renderSim();
+      if(!(await wait(130,tok))) return;
+    }
+    if(!(await wait(420,tok))) return;
+  }
+  S.busy=false; S.written=true;
+  setCaption('<b>Escriptura completada.</b> Clica un disc per trencar-lo i mira si les dades sobreviuen.');
+  refresh();
+}
+function toggleDisk(c){
+  if(S.busy) return;
+  if(!S.written){ setCaption('Espera que acabi l\'escriptura, o prem «Escriu els fitxers».'); return; }
+  if(S.failed.has(c)){ S.failed.delete(c); setCaption('<b>Disc '+(c+1)+' reconnectat.</b>'); }
+  else { S.failed.add(c); setCaption(failCaption(c)); }
+  refresh();
+}
+async function rebuild(){
+  if(S.busy||S.failed.size===0) return;
+  if(!survives(S.type,S.n,S.failed)){
+    setCaption('<b>No es pot reconstruir.</b> Hi ha massa discs trencats per a un '+TYPES[S.type].name+'. Les dades s\'han de restaurar des d\'una còpia de seguretat.');
+    return;
+  }
+  var tok=++S.token; S.busy=true;
+  var disks=Array.from(S.failed).sort(function(a,b){return a-b});
+  S.failed.clear();
+  disks.forEach(function(c){S.newDisks.add(c);for(var r=0;r<ROWS;r++) S.filled.delete(r*100+c)});
+  setCaption(rebuildCaption()); refresh();
+  if(!(await wait(700,tok))) return;
+  for(var r=0;r<ROWS;r++){
+    disks.forEach(function(c){S.rebuild.add(r*100+c)});
+    renderSim();
+    if(!(await wait(520,tok))) return;
+    disks.forEach(function(c){var k=r*100+c;S.rebuild.delete(k);S.filled.add(k);S.fresh.add(k)});
+    renderSim();
+    if(!(await wait(160,tok))) return;
+  }
+  S.newDisks.clear(); S.busy=false;
+  setCaption('<b>Reconstrucció completada.</b> Tots els blocs han tornat al disc nou.');
+  refresh();
+}
+function deleteBlock(){
+  if(S.busy||!S.written||S.deleted.size||S.failed.size) return;
+  S.deleted.add(0);
+  setCaption('Esborres <b>B1</b> per error. El controlador RAID ho executa a tots els discs a la vegada, i les paritats es recalculen sense B1.');
+  refresh();
+}
+function selectType(id){
+  var t=TYPES[id]; S.type=id;
+  if(S.n<t.min) S.n=t.min;
+  if(id==='r10'&&S.n%2) S.n=Math.min(S.n+1,MAXN);
+  renderAll();
+  setTimeout(startWrite,150);
+}
+function changeN(d){
+  var t=TYPES[S.type], nn=S.n+d*t.step;
+  if(nn<t.min||nn>MAXN) return;
+  S.n=nn; renderAll(); setTimeout(startWrite,150);
+}
+
+/* ---------- Esdeveniments ---------- */
+$('#tabs').addEventListener('click',function(e){var b=e.target.closest('[data-t]');if(b) selectType(b.dataset.t)});
+$('#tbody').addEventListener('click',function(e){var tr=e.target.closest('tr[data-t]');if(tr) selectType(tr.dataset.t)});
+$('#array').addEventListener('click',function(e){var d=e.target.closest('.disk');if(d) toggleDisk(+d.dataset.c)});
+$('#btnWrite').addEventListener('click',startWrite);
+$('#btnRebuild').addEventListener('click',rebuild);
+$('#btnDelete').addEventListener('click',deleteBlock);
+$('#nMinus').addEventListener('click',function(){changeN(-1)});
+$('#nPlus').addEventListener('click',function(){changeN(1)});
+$('#cRange').addEventListener('input',function(e){S.C=+e.target.value;renderInfo();renderCap();renderTable();renderSim()});
+$('#need').addEventListener('input',function(e){var v=+e.target.value;if(v>0){S.need=v;renderCap();renderTable()}});
+$('#speed').addEventListener('input',function(e){S.speed=+e.target.value});
+$('#btnPreset').addEventListener('click',function(){
+  S.n=4;S.C=4;S.need=6;
+  var t=TYPES[S.type]; if(S.n<t.min) S.n=t.min;
+  $('#cRange').value=4;$('#need').value=6;
+  renderAll(); setTimeout(startWrite,150);
+});
+
+renderAll();
+setTimeout(startWrite,500);
+})();
+</script>
+</body>
+</html>
